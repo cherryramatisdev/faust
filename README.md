@@ -31,7 +31,7 @@ Screenshots of Faust in Canvas will be added here.
 ## Features
 
 - Add an agent harness card from the Canvas context menu or command palette.
-- Choose Pi, Codex, or Claude Code for each card.
+- Choose the default harness provider in Faust settings.
 - Read connected text and file nodes as agent context through Faust's MCP tools.
 - Write to explicitly connected text or file nodes, with live target validation and acknowledgements.
 - Keep each agent session attached to its Canvas card.
@@ -69,8 +69,8 @@ chmod +x "<vault>/.obsidian/plugins/faust/node_modules/node-pty/prebuilds"/darwi
 
 ## Usage
 
-1. Open a Canvas and add a Faust harness with the Canvas context menu or the **Add Faust harness to Canvas** command.
-2. Choose Pi, Codex, or Claude Code in the harness card.
+1. In **Settings → Faust**, choose the default harness provider: Pi, Codex, or Claude Code.
+2. Open a Canvas and add a Faust harness with the Canvas context menu or the **Add Faust harness to Canvas** command. The new card uses the provider selected in settings.
 3. Connect text or file nodes directly to the harness: incoming connections provide context, and outgoing connections make nodes available as write targets.
 4. Start using the harness card to open its agent session.
 
@@ -78,7 +78,7 @@ Faust uses direct connections to determine context and available write targets. 
 
 ## Configuration
 
-Open **Settings → Faust** to choose the default provider for new cards, set executable paths for Pi, Codex, and Claude Code, select a launch shell, adjust console font size, and set the Node.js path. Leave executable and Node.js paths empty to use automatic detection or the command available on `PATH`.
+Open **Settings → Faust** to choose the default provider for new cards, set executable paths for Pi, Codex, and Claude Code, select a launch shell, adjust console font size, and set the Node.js path. Provider choice is part of Faust customization and is set here before building a Canvas workflow. Leave executable and Node.js paths empty to use automatic detection or the command available on `PATH`.
 
 ## Limitations
 
