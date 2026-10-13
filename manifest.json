@@ -1,9 +1,9 @@
 {
   "id": "faust",
   "name": "Faust",
-  "version": "1.0.0",
+  "version": "0.1.0-beta.1",
   "minAppVersion": "1.0.0",
   "description": "Canvas agent harnesses for Pi, Codex, and Claude Code, with connected-node context and controlled Canvas writes.",
-  "author": "Alicia de Paula",
+  "author": "Cherry Ramatis",
   "isDesktopOnly": true
 }

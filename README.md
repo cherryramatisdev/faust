@@ -14,9 +14,7 @@ Faust is a standalone plugin that handles `agent-harness` blocks rendered inside
 
 ## Screenshots
 
-Screenshots of Faust in Canvas will be added here.
-
-<!-- Screenshot placeholder: replace this section with Canvas screenshots. -->
+![Faust running in an Obsidian Canvas with connected text nodes](images/faust-canvas-demo.png)
 
 ## Contents
 
@@ -40,15 +38,16 @@ Screenshots of Faust in Canvas will be added here.
 
 Faust is a desktop-only Obsidian plugin. Its MCP bridge requires Node.js 18 or newer.
 
-1. Install dependencies in the plugin folder with `npm install`.
-2. Place the folder at `<vault>/.obsidian/plugins/faust/`.
-3. Enable **Faust** in Obsidian's Community plugins settings.
+1. Install dependencies in the plugin folder with `npm ci`.
+2. Run `npm run build` to generate `main.js` and `mcp-server.js`. **This build is required for the plugin to work.**
+3. Place the folder at `<vault>/.obsidian/plugins/faust/`.
+4. Enable **Faust** in Obsidian's Community plugins settings.
 
 ### macOS and `node-pty`
 
 Faust runs `node-pty` in a separate Node.js process. Node.js must be installed on your Mac. Faust checks common locations such as `/opt/homebrew/bin/node`, `/usr/local/bin/node`, `/usr/bin/node`, and `PATH`. If it cannot find Node.js, set **Node.js path** in Faust settings.
 
-`node-pty` is a native addon and must be installed for the Mac's OS and architecture. Run `npm install` in the Faust plugin folder on the Mac where Obsidian will use it; do not copy `node_modules` from another operating system or architecture. If the native build needs Apple's Command Line Tools, install them with:
+`node-pty` is a native addon and must be installed for the Mac's OS and architecture. Run `npm ci` in the Faust plugin folder on the Mac where Obsidian will use it; do not copy `node_modules` from another operating system or architecture. If the native build needs Apple's Command Line Tools, install them with:
 
 ```bash
 xcode-select --install
@@ -58,7 +57,7 @@ Recent npm versions may hold back dependency install scripts. If that happens, a
 
 ```bash
 npm install-scripts approve esbuild node-pty
-npm install
+npm ci
 ```
 
 If syncing or copying the plugin strips the executable bit from `node-pty`'s macOS helper, restore it with:
