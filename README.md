@@ -1,44 +1,61 @@
 # Faust
 
-Faust is a standalone Obsidian plugin for running Pi, Codex, and Claude Code harnesses inside Canvas. Incoming connections provide agent context; outgoing connections are explicit write targets.
+<img align="right" width="280" src="images/faust-study.png" alt="An illustration of Faust studying in his workshop">
 
-The name refers to Goethe's scholar who makes a pact with Mephistopheles in pursuit of knowledge. The implementation was copied and adapted from [Open Terminal](https://github.com/m4rri4nne/open-terminal-obsidian). Faust runs as an independent plugin with its own code, settings, dependencies, and runtime.
+Faust brings Pi, Codex, and Claude Code into [Obsidian Canvas](https://obsidian.md/canvas). Give an agent context by connecting it to Canvas text or file nodes, then choose explicit connected nodes as write targets. Each agent session stays attached to its own Canvas card.
+
+> *Was du ererbt von deinen Vätern hast, erwirb es, um es zu besitzen.*
+>
+> “What you have inherited from your fathers, acquire it to make it your own.”
+>
+> — Johann Wolfgang von Goethe, *Faust I*, “Night”
+
+Faust is a standalone plugin. It handles `agent-harness` and legacy `pi-harness` blocks rendered inside Canvas cards; [Open Terminal](https://github.com/m4rri4nne/open-terminal-obsidian) continues to handle `terminal` blocks and general terminal access.
+
+## Screenshots
+
+Screenshots of Faust in Canvas will be added here.
+
+<!-- Screenshot placeholder: replace this section with Canvas screenshots. -->
+
+## Contents
+
+- [Features](#features)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Configuration](#configuration)
+- [Limitations](#limitations)
+- [Development](#development)
+- [Credits](#credits)
+- [License](#license)
 
 ## Features
 
-- Add a harness card from the Canvas context menu or command palette.
+- Add an agent harness card from the Canvas context menu or command palette.
 - Choose Pi, Codex, or Claude Code for each card.
-- Read connected incoming text and file nodes through Canvas MCP tools.
-- Write only to explicitly connected outgoing text or file nodes, with live target validation and acknowledgements.
+- Read connected text and file nodes as agent context through Faust's MCP tools.
+- Write to explicitly connected text or file nodes, with live target validation and acknowledgements.
 - Keep each agent session attached to its Canvas card.
 
-Faust handles `agent-harness` and legacy `pi-harness` blocks only when they are rendered inside Canvas cards. Open Terminal continues to handle `terminal` blocks and general terminal access.
+## Installation
 
-## Known limitations
+Faust is a desktop-only Obsidian plugin. Its MCP bridge requires Node.js 18 or newer.
 
-1. We currently only support 1:1 node connection, meaning that if your node already has other connections and you connect it to a harness, we don't pass all them as context.
-2. We currently only support node to node connection (being harness node, text node or file node), we don't support groups of nodes.
-3. We currently only support file and text nodes as incoming or outgoing connections, we don't support images, web pages, pdfs, etc..
-
-## Install
-
-1. Install dependencies in this folder with `npm install` (this builds `node-pty` for the current platform).
+1. Install dependencies in the plugin folder with `npm install`.
 2. Place the folder at `<vault>/.obsidian/plugins/faust/`.
 3. Enable **Faust** in Obsidian's Community plugins settings.
 
-Faust is desktop-only. Its MCP bridge requires Node.js 18 or newer. Configure the Node.js path, agent executable paths, and launch shell in Faust settings as needed.
-
 ### macOS and `node-pty`
 
-Node.js must be installed on the Mac because Faust runs `node-pty` in a separate Node process. Faust checks common locations such as `/opt/homebrew/bin/node`, `/usr/local/bin/node`, `/usr/bin/node`, and `PATH`. If it cannot find Node.js, set **Node.js path** in Faust settings.
+Faust runs `node-pty` in a separate Node.js process. Node.js must be installed on your Mac. Faust checks common locations such as `/opt/homebrew/bin/node`, `/usr/local/bin/node`, `/usr/bin/node`, and `PATH`. If it cannot find Node.js, set **Node.js path** in Faust settings.
 
-`node-pty` is a native addon and must be installed for the Mac's OS and architecture. Run `npm install` in the Faust plugin folder on the Mac where Obsidian will use it; do not copy `node_modules` from another operating system or architecture. On macOS, install Xcode Command Line Tools first if the native build needs them:
+`node-pty` is a native addon and must be installed for the Mac's OS and architecture. Run `npm install` in the Faust plugin folder on the Mac where Obsidian will use it; do not copy `node_modules` from another operating system or architecture. If the native build needs Apple's Command Line Tools, install them with:
 
 ```bash
 xcode-select --install
 ```
 
-Recent npm versions may report that dependency install scripts were held back. If so, approve the build scripts Faust needs, then run the install again:
+Recent npm versions may hold back dependency install scripts. If that happens, approve the build scripts Faust needs, then install again:
 
 ```bash
 npm install-scripts approve esbuild node-pty
@@ -51,10 +68,35 @@ If syncing or copying the plugin strips the executable bit from `node-pty`'s mac
 chmod +x "<vault>/.obsidian/plugins/faust/node_modules/node-pty/prebuilds"/darwin-*/spawn-helper
 ```
 
+## Usage
+
+1. Open a Canvas and add a Faust harness with the Canvas context menu or the **Add Faust harness to Canvas** command.
+2. Choose Pi, Codex, or Claude Code in the harness card.
+3. Connect text or file nodes directly to the harness: incoming connections provide context, and outgoing connections make nodes available as write targets.
+4. Start using the harness card to open its agent session.
+
+Faust uses direct connections to determine context and available write targets. Write operations are restricted to connected text or file nodes and are validated against the current Canvas state.
+
+## Configuration
+
+Open **Settings → Faust** to choose the default provider for new cards, set executable paths for Pi, Codex, and Claude Code, select a launch shell, adjust console font size, and set the Node.js path. Leave executable and Node.js paths empty to use automatic detection or the command available on `PATH`.
+
+## Limitations
+
+- Connections must be directly between a harness and a text or file node. Context is not gathered through other connected nodes.
+- Canvas groups are not supported.
+- Images, web pages, PDFs, and other node types are not supported as context or write targets.
+
 ## Development
 
-Edit `src/`, then run `npm run build` to generate `main.js` and `mcp-server.js`. `npm test` runs the harness unit tests.
+Edit files in `src/`, then run `npm run build` to generate `main.js` and `mcp-server.js`. Run `npm test` to execute the harness unit tests.
 
-## Acknowledgments
+## Credits
 
-Huge thanks to [m4rri4nne](https://github.com/m4rri4nne) for the awesome plugin ❤️.
+The plugin's initial implementation was adapted from [Open Terminal](https://github.com/m4rri4nne/open-terminal-obsidian). Thanks to m4rri4nne for the original project.
+
+The illustration is Eugène Delacroix's *Faust in His Study*, made for Goethe's *Faust*.
+
+## License
+
+[MIT](LICENSE)
