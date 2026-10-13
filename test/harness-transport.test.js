@@ -13,7 +13,7 @@ const {
   waitForWriteAcknowledgement,
   writeCanvasWriteAcknowledgement,
   writeCanvasWriteOperation,
-} = require("../src/pi-bridge-transport");
+} = require("../src/harness-transport");
 
 async function temporaryRoot(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "faust-transport-test-"));

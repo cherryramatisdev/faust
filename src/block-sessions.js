@@ -3,7 +3,7 @@
 // Registry of agent consoles embedded in Canvas harness cards.
 
 const { TFile } = require("obsidian");
-const { GENERIC_HARNESS_LANGUAGE } = require("./harness-declaration");
+const { HARNESS_LANGUAGE } = require("./harness-declaration");
 const { HarnessBlockChild } = require("./harness-block");
 
 /** "key: value" options of a Canvas harness declaration. */
@@ -23,7 +23,7 @@ function blockKey(source, sourcePath) {
 }
 
 class BlockSessions {
-  constructor(plugin, { language = GENERIC_HARNESS_LANGUAGE, createSession, keyFor = blockKey } = {}) {
+  constructor(plugin, { language = HARNESS_LANGUAGE, createSession, keyFor = blockKey } = {}) {
     this.plugin = plugin;
     this.language = language;
     this.keyFor = keyFor;

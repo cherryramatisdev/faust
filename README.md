@@ -10,7 +10,7 @@ Faust brings Pi, Codex, and Claude Code into [Obsidian Canvas](https://obsidian.
 >
 > — Johann Wolfgang von Goethe, *Faust I*, “Night”
 
-Faust is a standalone plugin. It handles `agent-harness` and legacy `pi-harness` blocks rendered inside Canvas cards; [Open Terminal](https://github.com/m4rri4nne/open-terminal-obsidian) continues to handle `terminal` blocks and general terminal access.
+Faust is a standalone plugin that handles `agent-harness` blocks rendered inside Canvas cards.
 
 ## Screenshots
 

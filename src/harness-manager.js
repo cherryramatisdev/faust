@@ -30,9 +30,9 @@ class HarnessManager {
       this.plugin.notify(`Invalid harness: ${declaration.errors.join(" ")}`);
       return null;
     }
-    const provider = this.providers.get(declaration.harness.agent);
+    const provider = this.providers.get(declaration.harness.provider);
     if (!provider) {
-      this.plugin.notify(`Unsupported harness provider "${declaration.harness.agent}".`);
+      this.plugin.notify(`Unsupported harness provider "${declaration.harness.provider}".`);
       return null;
     }
     const candidates = canvasCandidates(sourcePath, openCanvasPaths(this.plugin.app));

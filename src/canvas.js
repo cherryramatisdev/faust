@@ -3,7 +3,7 @@
 // Canvas helpers. These use Obsidian's internal, undocumented Canvas API.
 
 const { ItemView, Notice, TFile } = require("obsidian");
-const { createHarnessMarkdown, createPiHarnessMarkdown } = require("./harness-declaration");
+const { createHarnessMarkdown } = require("./harness-declaration");
 
 /** A Canvas view backed by a file in the vault. */
 function isCanvasView(view) {
@@ -61,23 +61,6 @@ function addHarnessToCanvas(canvas, provider = "pi") {
   if (typeof canvas.requestSave === "function") canvas.requestSave();
 }
 
-/** Backward-compatible helper for callers that still create Pi-only declarations. */
-function addPiHarnessToCanvas(canvas) {
-  if (!canCreateTextNodes(canvas)) {
-    new Notice("This Obsidian version doesn't allow plugins to create cards. Create a text card with a pi-harness block instead.");
-    return;
-  }
-  canvas.createTextNode({
-    pos: canvasCenter(canvas),
-    position: "center",
-    size: { width: 640, height: 380 },
-    text: createPiHarnessMarkdown(),
-    focus: false,
-    save: true,
-  });
-  if (typeof canvas.requestSave === "function") canvas.requestSave();
-}
-
 function canCreateTextNodes(canvas) {
   return typeof canvas.createTextNode === "function";
 }
@@ -86,4 +69,4 @@ function canvasCenter(canvas) {
   return typeof canvas.posCenter === "function" ? canvas.posCenter() : { x: 0, y: 0 };
 }
 
-module.exports = { getActiveCanvas, openCanvasPaths, liveCanvasContent, addHarnessToCanvas, addPiHarnessToCanvas };
+module.exports = { getActiveCanvas, openCanvasPaths, liveCanvasContent, addHarnessToCanvas };

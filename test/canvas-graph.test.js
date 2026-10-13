@@ -8,7 +8,7 @@ const graph = parseCanvasGraph(JSON.stringify({
   nodes: [
     { id: "requirements", type: "text", text: "# Requirements\n\nBuild a login flow." },
     { id: "architecture", type: "text", text: "The backend uses OAuth." },
-    { id: "pi-main", type: "text", text: "```pi-harness\nid: pi-main\nagent: pi\n```" },
+    { id: "pi-main", type: "text", text: "```agent-harness\nid: pi-main\nprovider: pi\n```" },
   ],
   edges: [
     { id: "second", fromNode: "architecture", toNode: "pi-main" },
@@ -34,7 +34,7 @@ test("reads only the requested incoming node and ignores unsupported siblings", 
     nodes: [
       { id: "group", type: "group" },
       { id: "requirements", type: "text", text: "# Requirements\n\nShip it." },
-      { id: "pi-main", type: "text", text: "```pi-harness\nid: pi-main\nagent: pi\n```" },
+      { id: "pi-main", type: "text", text: "```agent-harness\nid: pi-main\nprovider: pi\n```" },
     ],
     edges: [
       { id: "group-edge", fromNode: "group", toNode: "pi-main" },
@@ -88,7 +88,7 @@ test("reads incoming file nodes through the vault resolver", async () => {
   const fileGraph = parseCanvasGraph(JSON.stringify({
     nodes: [
       { id: "spec", type: "file", file: "docs/spec.md" },
-      { id: "pi-main", type: "text", text: "```pi-harness\nid: pi-main\nagent: pi\n```" },
+      { id: "pi-main", type: "text", text: "```agent-harness\nid: pi-main\nprovider: pi\n```" },
     ],
     edges: [{ id: "file-edge", fromNode: "spec", toNode: "pi-main" }],
   }));

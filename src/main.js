@@ -9,7 +9,7 @@ const { getActiveCanvas, addHarnessToCanvas } = require("./canvas");
 const { FaustSettingTab } = require("./settings-tab");
 const { HarnessManager } = require("./harness-manager");
 const { ClaudeCodeHarnessProvider, CodexHarnessProvider, HarnessProviderRegistry, PiHarnessProvider } = require("./harness-provider");
-const { GENERIC_HARNESS_LANGUAGE, HARNESS_LANGUAGE } = require("./harness-declaration");
+const { HARNESS_LANGUAGE } = require("./harness-declaration");
 
 class FaustPlugin extends Plugin {
   async onload() {
@@ -37,7 +37,7 @@ class FaustPlugin extends Plugin {
     }));
 
     this.harnessBlocks = new BlockSessions(this, {
-      language: [HARNESS_LANGUAGE, GENERIC_HARNESS_LANGUAGE],
+      language: HARNESS_LANGUAGE,
       keyFor: (source, sourcePath) => `${sourcePath}::${blockKey(source, sourcePath)}`,
       createSession: (_opts, ctx, source) => this.harnesses.create(source, ctx.sourcePath),
     });
@@ -49,7 +49,6 @@ class FaustPlugin extends Plugin {
       return this.harnessBlocks.process(source, el, ctx);
     };
     this.registerMarkdownCodeBlockProcessor(HARNESS_LANGUAGE, renderCanvasHarness);
-    this.registerMarkdownCodeBlockProcessor(GENERIC_HARNESS_LANGUAGE, renderCanvasHarness);
 
     this.addCommand({
       id: "add-faust-harness-to-canvas",
