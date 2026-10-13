@@ -1,6 +1,6 @@
 # Faust
 
-<img align="right" width="280" src="images/faust-study.png" alt="An illustration of Faust studying in his workshop">
+<img align="right" width="280" src="images/faust-study.png" alt="The illustration is Eugène Delacroix's *Faust in His Study*, made for Goethe's *Faust*.">
 
 Faust brings Pi, Codex, and Claude Code into [Obsidian Canvas](https://obsidian.md/canvas). Give an agent context by connecting it to Canvas text or file nodes, then choose explicit connected nodes as write targets. Each agent session stays attached to its own Canvas card.
 
@@ -26,8 +26,7 @@ Screenshots of Faust in Canvas will be added here.
 - [Configuration](#configuration)
 - [Limitations](#limitations)
 - [Development](#development)
-- [Credits](#credits)
-- [License](#license)
+- [Special thanks](#special-thanks)
 
 ## Features
 
@@ -91,12 +90,6 @@ Open **Settings → Faust** to choose the default provider for new cards, set ex
 
 Edit files in `src/`, then run `npm run build` to generate `main.js` and `mcp-server.js`. Run `npm test` to execute the harness unit tests.
 
-## Credits
+## Special thanks
 
-The plugin's initial implementation was adapted from [Open Terminal](https://github.com/m4rri4nne/open-terminal-obsidian). Thanks to m4rri4nne for the original project.
-
-The illustration is Eugène Delacroix's *Faust in His Study*, made for Goethe's *Faust*.
-
-## License
-
-[MIT](LICENSE)
+[Open Terminal](https://github.com/m4rri4nne/open-terminal-obsidian) was an important inspiration for Faust. Special thanks to [m4rri4nne](https://github.com/m4rri4nne) for the original project, without you this plugin wouldn't exist 🖤.
