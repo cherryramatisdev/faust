@@ -36,28 +36,21 @@ Faust is a standalone plugin that handles `agent-harness` blocks rendered inside
 
 ## Installation
 
-Faust is a desktop-only Obsidian plugin. Its MCP bridge requires Node.js 18 or newer.
+Faust is a desktop-only Obsidian plugin. Its MCP bridge requires Node.js 18 or newer; building requires Deno, managed through mise in this repository.
 
-1. Install dependencies in the plugin folder with `npm ci`.
-2. Run `npm run build` to generate `main.js` and `mcp-server.js`. **This build is required for the plugin to work.**
-3. Place the folder at `<vault>/.obsidian/plugins/faust/`.
-4. Enable **Faust** in Obsidian's Community plugins settings.
+1. Run `make build` in the plugin folder. This checks for Deno, installs dependencies, and builds `main.js` and `mcp-server.js`. **This build is required for the plugin to work.**
+2. Place the folder at `<vault>/.obsidian/plugins/faust/`.
+3. Enable **Faust** in Obsidian's Community plugins settings.
+4. If Deno is missing, install [mise](https://mise.jdx.dev/getting-started.html), then run `mise install` in this repository to install the Deno version selected by `mise.toml`.
 
 ### macOS and `node-pty`
 
 Faust runs `node-pty` in a separate Node.js process. Node.js must be installed on your Mac. Faust checks common locations such as `/opt/homebrew/bin/node`, `/usr/local/bin/node`, `/usr/bin/node`, and `PATH`. If it cannot find Node.js, set **Node.js path** in Faust settings.
 
-`node-pty` is a native addon and must be installed for the Mac's OS and architecture. Run `npm ci` in the Faust plugin folder on the Mac where Obsidian will use it; do not copy `node_modules` from another operating system or architecture. If the native build needs Apple's Command Line Tools, install them with:
+`node-pty` is a native addon and must be installed for the Mac's OS and architecture. Run the dependency-install command from step 1 on the Mac where Obsidian will use it; do not copy `node_modules` from another operating system or architecture. If the native build needs Apple's Command Line Tools, install them with:
 
 ```bash
 xcode-select --install
-```
-
-Recent npm versions may hold back dependency install scripts. If that happens, approve the build scripts Faust needs, then install again:
-
-```bash
-npm install-scripts approve esbuild node-pty
-npm ci
 ```
 
 If syncing or copying the plugin strips the executable bit from `node-pty`'s macOS helper, restore it with:
@@ -87,7 +80,7 @@ Open **Settings → Faust** to choose the default provider for new cards, set ex
 
 ## Development
 
-Edit files in `src/`, then run `npm run build` to generate `main.js` and `mcp-server.js`. Run `npm test` to execute the harness unit tests.
+Edit files in `src/`, then run `deno task build` to generate `main.js` and `mcp-server.js`. Run `deno task dev` to rebuild on changes, `deno task test` for unit tests, and `deno task check` for type checking.
 
 ## Special thanks
 

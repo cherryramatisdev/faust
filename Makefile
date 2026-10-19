@@ -3,7 +3,7 @@
 check-deno:
 	@if ! command -v deno >/dev/null 2>&1; then \
 		echo "Deno is required but was not found on PATH."; \
-		echo "Install mise (https://mise.jdx.dev/getting-started.html), then run 'mise install' in this directory to install the pinned tool."; \
+		echo "Install mise (https://mise.jdx.dev/getting-started.html), then run 'mise install' in this directory to install the Deno version selected by mise.toml."; \
 		exit 1; \
 	fi
 
