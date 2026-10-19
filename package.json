@@ -4,9 +4,9 @@
   "description": "Standalone Obsidian Canvas agent harnesses.",
   "main": "main.js",
   "scripts": {
-    "build": "node esbuild.config.mjs",
-    "dev": "node esbuild.config.mjs --watch",
-    "test": "node --test"
+    "build": "deno task build",
+    "dev": "deno task dev",
+    "test": "deno task test"
   },
   "keywords": [],
   "type": "commonjs",
@@ -17,7 +17,9 @@
     "node-pty": "^1.1.0"
   },
   "devDependencies": {
-    "esbuild": "^0.25.12"
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.25.12",
+    "obsidian": "^1.14.4"
   },
   "allowScripts": {
     "esbuild@0.25.12": true,

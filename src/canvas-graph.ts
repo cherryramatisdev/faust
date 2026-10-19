@@ -1,19 +1,90 @@
-"use strict";
+import crypto from "node:crypto";
+import path from "node:path";
+import { parseHarnessNode } from "./harness-declaration.js";
 
-const crypto = require("crypto");
-const path = require("path");
-const { parseHarnessNode } = require("./harness-declaration");
+export type CanvasNodeType = "text" | "file" | "link" | "group";
+
+export interface CanvasNode {
+  id: string;
+  type: string;
+  text?: string;
+  file?: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  color?: string;
+}
+
+export interface CanvasEdge {
+  id?: string;
+  fromNode: string;
+  toNode: string;
+  fromSide?: string;
+  toSide?: string;
+  color?: string;
+  label?: string;
+}
+
+export interface CanvasGraph {
+  nodes: CanvasNode[];
+  edges: CanvasEdge[];
+}
+
+export type CanvasWriteMode = "replace" | "append";
+
+export interface CanvasSourceNode {
+  id: string;
+  type: string;
+  title: string;
+  content: string;
+  file?: string;
+}
+
+export interface CanvasTargetNode {
+  id: string;
+  type: "text" | "file";
+  label: string;
+  file: string | null;
+}
+
+export type CanvasConnectionDirection = "incoming" | "outgoing";
+
+export interface CanvasConnection {
+  id: string;
+  type: string;
+  label: string;
+  file: string | null;
+  directions: CanvasConnectionDirection[];
+}
+
+export interface CanvasContextSourceNode {
+  id: string;
+  type: string;
+  title: string;
+  contentHash: string;
+}
+
+export interface CanvasContextContent {
+  content: string;
+  sourceNodes: CanvasContextSourceNode[];
+}
+
+export interface GetIncomingSourceNodesOptions {
+  allowFiles?: boolean;
+  nodeId?: string | null;
+}
 
 class CanvasGraphError extends Error {
-  constructor(message) {
+  constructor(message: string) {
     super(message);
     this.name = "CanvasGraphError";
   }
 }
 
 /** Accepts Canvas JSON text or an already-parsed Canvas document. */
-function parseCanvasGraph(content) {
-  let graph;
+function parseCanvasGraph(content: string | CanvasGraph): CanvasGraph {
+  let graph: CanvasGraph;
   try {
     graph = typeof content === "string" ? JSON.parse(content) : content;
   } catch {
@@ -25,13 +96,8 @@ function parseCanvasGraph(content) {
   return graph;
 }
 
-/**
- * Returns text source nodes in the same order as incoming Canvas edges. Pass `nodeId` to
- * keep a single source: the filter runs before the node type is inspected, so asking for one
- * node never fails because a different connected node is unsupported.
- */
-function getIncomingSourceNodes(graph, harnessNodeId, { allowFiles = false, nodeId = null } = {}) {
-  const nodesById = new Map();
+function getIncomingSourceNodes(graph: CanvasGraph, harnessNodeId: string, { allowFiles = false, nodeId = null }: GetIncomingSourceNodesOptions = {}): CanvasSourceNode[] {
+  const nodesById: Map<string, CanvasNode> = new Map();
   for (const node of graph.nodes) {
     if (!node || typeof node.id !== "string" || !node.id) throw new CanvasGraphError("Canvas nodes must have IDs.");
     if (nodesById.has(node.id)) throw new CanvasGraphError(`Duplicate Canvas node ID "${node.id}".`);
@@ -39,8 +105,8 @@ function getIncomingSourceNodes(graph, harnessNodeId, { allowFiles = false, node
   }
   if (!nodesById.has(harnessNodeId)) throw new CanvasGraphError(`Harness node "${harnessNodeId}" was not found.`);
 
-  const sources = [];
-  const includedNodeIds = new Set();
+  const sources: CanvasSourceNode[] = [];
+  const includedNodeIds: Set<string> = new Set();
   for (const edge of graph.edges) {
     if (!edge || typeof edge.fromNode !== "string" || typeof edge.toNode !== "string") {
       throw new CanvasGraphError("Canvas edges must include fromNode and toNode IDs.");
@@ -50,7 +116,7 @@ function getIncomingSourceNodes(graph, harnessNodeId, { allowFiles = false, node
     }
     if (edge.toNode !== harnessNodeId || includedNodeIds.has(edge.fromNode)) continue;
 
-    const source = nodesById.get(edge.fromNode);
+    const source: CanvasNode = nodesById.get(edge.fromNode)!;
     if (nodeId && source.id !== nodeId) continue;
     if (source.type === "text") {
       if (typeof source.text !== "string") throw new CanvasGraphError(`Text source node "${source.id}" has no text content.`);
@@ -68,15 +134,14 @@ function getIncomingSourceNodes(graph, harnessNodeId, { allowFiles = false, node
   return sources;
 }
 
-function getOutgoingTargets(graph, harnessNodeId) {
+function getOutgoingTargets(graph: CanvasGraph, harnessNodeId: string): CanvasTargetNode[] {
   const nodesById = indexNodes(graph);
   if (!nodesById.has(harnessNodeId)) throw new CanvasGraphError(`Harness node "${harnessNodeId}" was not found.`);
 
-  const targets = [];
+  const targets: CanvasTargetNode[] = [];
   for (const edge of graph.edges) {
     if (edge.fromNode !== harnessNodeId) continue;
-    const node = nodesById.get(edge.toNode);
-    if (!node) throw new CanvasGraphError(`Canvas edge "${edge.id || "unknown"}" references a missing node.`);
+    const node: CanvasNode = nodesById.get(edge.toNode)!;
     if (node.type === "text") {
       if (typeof node.text !== "string") throw new CanvasGraphError(`Text target node "${node.id}" has no text content.`);
       if (parseHarnessNode(node.text).valid) throw new CanvasGraphError(`Harness node "${node.id}" cannot be a write target.`);
@@ -91,17 +156,17 @@ function getOutgoingTargets(graph, harnessNodeId) {
   return targets;
 }
 
-function resolveOutgoingTarget(graph, harnessNodeId, targetNodeId) {
+function resolveOutgoingTarget(graph: CanvasGraph, harnessNodeId: string, targetNodeId: string): CanvasTargetNode {
   const target = getOutgoingTargets(graph, harnessNodeId).find((candidate) => candidate.id === targetNodeId);
   if (!target) throw new CanvasGraphError(`Canvas node "${targetNodeId}" is not a direct outgoing target of harness "${harnessNodeId}".`);
   return target;
 }
 
 /** Union of incoming sources and outgoing targets, each tagged with its directions. */
-function buildConnections(graph, harnessNodeId) {
+function buildConnections(graph: CanvasGraph, harnessNodeId: string): CanvasConnection[] {
   const targets = getOutgoingTargets(graph, harnessNodeId);
   const incoming = getIncomingSourceNodes(graph, harnessNodeId, { allowFiles: true });
-  const connections = incoming.map((node) => ({
+  const connections: CanvasConnection[] = incoming.map((node) => ({
     id: node.id,
     type: node.type,
     label: node.title,
@@ -116,8 +181,8 @@ function buildConnections(graph, harnessNodeId) {
   return connections;
 }
 
-function indexNodes(graph) {
-  const nodesById = new Map();
+function indexNodes(graph: CanvasGraph): Map<string, CanvasNode> {
+  const nodesById: Map<string, CanvasNode> = new Map();
   for (const node of graph.nodes) {
     if (!node || typeof node.id !== "string" || !node.id) throw new CanvasGraphError("Canvas nodes must have IDs.");
     if (nodesById.has(node.id)) throw new CanvasGraphError(`Duplicate Canvas node ID "${node.id}".`);
@@ -130,7 +195,7 @@ function indexNodes(graph) {
   return nodesById;
 }
 
-async function resolveIncomingSourceNodes(graph, harnessNodeId, readFile, options = {}) {
+async function resolveIncomingSourceNodes(graph: CanvasGraph, harnessNodeId: string, readFile: (filePath: string) => Promise<string>, options: GetIncomingSourceNodesOptions = {}): Promise<CanvasSourceNode[]> {
   if (typeof readFile !== "function") throw new CanvasGraphError("A vault file resolver is required for file Canvas nodes.");
   const sources = getIncomingSourceNodes(graph, harnessNodeId, { allowFiles: true, ...options });
   for (const source of sources) {
@@ -144,11 +209,11 @@ async function resolveIncomingSourceNodes(graph, harnessNodeId, readFile, option
   return sources;
 }
 
-function buildCanvasContextContent(sources) {
+function buildCanvasContextContent(sources: CanvasSourceNode[]): CanvasContextContent {
   if (!Array.isArray(sources) || sources.length === 0) throw new CanvasGraphError("No incoming Canvas nodes are connected to this harness.");
 
-  const sections = ["The following content is the current context of this Obsidian Canvas harness, connected to it by the user."];
-  const sourceNodes = sources.map((source) => ({
+  const sections: string[] = ["The following content is the current context of this Obsidian Canvas harness, connected to it by the user."];
+  const sourceNodes: CanvasContextSourceNode[] = sources.map((source) => ({
     id: source.id,
     type: source.type,
     title: source.title,
@@ -163,34 +228,35 @@ function buildCanvasContextContent(sources) {
 }
 
 /** Identifies the Canvas graph itself, independent of JSON property and collection order. */
-function contextFingerprint(graph) {
+function contextFingerprint(graph: CanvasGraph): string {
   const nodes = graph.nodes.map(canonicalize).sort(compareCanvasItems);
   const edges = graph.edges.map(canonicalize).sort(compareCanvasItems);
   return sha256(JSON.stringify({ nodes, edges }));
 }
 
-function canonicalize(value) {
+function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalize);
   if (!value || typeof value !== "object") return value;
-  return Object.keys(value).sort().reduce((result, key) => {
-    result[key] = canonicalize(value[key]);
+  const record = value as Record<string, unknown>;
+  return Object.keys(record).sort().reduce<Record<string, unknown>>((result, key) => {
+    result[key] = canonicalize(record[key]);
     return result;
   }, {});
 }
 
-function compareCanvasItems(left, right) {
+function compareCanvasItems(left: unknown, right: unknown): number {
   return JSON.stringify(left).localeCompare(JSON.stringify(right));
 }
 
-function sourceTitle(source) {
-  const firstLine = source.text.split(/\r?\n/).find((line) => line.trim());
+function sourceTitle(source: { id: string; text?: string }): string {
+  const firstLine: string | undefined = source.text?.split(/\r?\n/).find((line) => line.trim());
   if (!firstLine) return source.id;
   const title = firstLine.replace(/^\s*#{1,6}\s+/, "").trim();
   return title || source.id;
 }
 
-function sha256(content) {
+function sha256(content: string): string {
   return `sha256:${crypto.createHash("sha256").update(content).digest("hex")}`;
 }
 
-module.exports = { CanvasGraphError, buildCanvasContextContent, buildConnections, contextFingerprint, getIncomingSourceNodes, getOutgoingTargets, parseCanvasGraph, resolveIncomingSourceNodes, resolveOutgoingTarget };
+export { CanvasGraphError, buildCanvasContextContent, buildConnections, contextFingerprint, getIncomingSourceNodes, getOutgoingTargets, parseCanvasGraph, resolveIncomingSourceNodes, resolveOutgoingTarget };

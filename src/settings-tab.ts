@@ -1,18 +1,20 @@
-"use strict";
-
-const { PluginSettingTab, Setting } = require("obsidian");
+import { PluginSettingTab, Setting } from "obsidian";
+import type { App } from "obsidian";
+import type { FaustSettings, FaustPlugin } from "./constants.js";
 
 class FaustSettingTab extends PluginSettingTab {
-  constructor(app, plugin) {
+  plugin: FaustPlugin;
+
+  constructor(app: App, plugin: FaustPlugin) {
     super(app, plugin);
     this.plugin = plugin;
   }
 
-  display() {
+  display(): void {
     const { containerEl } = this;
     containerEl.empty();
-    const s = this.plugin.settings;
-    const save = () => this.plugin.saveSettings();
+    const s: FaustSettings = this.plugin.settings;
+    const save: () => Promise<void> = () => this.plugin.saveSettings();
 
     new Setting(containerEl)
       .setName("Shell")
@@ -61,11 +63,13 @@ class FaustSettingTab extends PluginSettingTab {
         })
       );
 
-    for (const [provider, label, placeholder] of [
+    type ProviderKey = "pi" | "codex" | "claude-code";
+    const entries: [ProviderKey, string, string][] = [
       ["pi", "Pi executable", "pi"],
       ["codex", "Codex executable", "codex"],
       ["claude-code", "Claude Code executable", "claude"],
-    ]) {
+    ];
+    for (const [provider, label, placeholder] of entries) {
       new Setting(containerEl)
         .setName(label)
         .setDesc(`Leave empty to use "${placeholder}" from PATH.`)
@@ -108,4 +112,4 @@ class FaustSettingTab extends PluginSettingTab {
   }
 }
 
-module.exports = { FaustSettingTab };
+export { FaustSettingTab };

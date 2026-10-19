@@ -1,18 +1,28 @@
-"use strict";
+import fsp from "node:fs/promises";
+import { TFile } from "obsidian";
+import { createBridgeSession } from "./harness-transport.js";
+import { findDuplicateHarnessIds, parseHarnessNode, parseHarnessSource } from "./harness-declaration.js";
+import { createHarnessSession } from "./harness-session.js";
+import { liveCanvasContent, openCanvasPaths } from "./canvas.js";
+import { parseCanvasGraph } from "./canvas-graph.js";
+import type { FaustPlugin } from "./constants.js";
+import type { HarnessProvider, HarnessProviderRegistry } from "./harness-provider.js";
+import type { CanvasGraph, CanvasNode } from "./canvas-graph.js";
+import type { HarnessDeclaration } from "./harness-declaration.js";
+import type { BridgeSession } from "./harness-transport.js";
+import type { HarnessSession } from "./harness-session.js";
 
-const fsp = require("fs/promises");
-const { TFile } = require("obsidian");
-const { createBridgeSession } = require("./harness-transport");
-const { findDuplicateHarnessIds, parseHarnessNode, parseHarnessSource } = require("./harness-declaration");
-const { createHarnessSession } = require("./harness-session");
-const { liveCanvasContent, openCanvasPaths } = require("./canvas");
-const { parseCanvasGraph } = require("./canvas-graph");
-
-const SAVE_SYNC_DEBOUNCE_MS = 750;
-const LIVE_MIRROR_INTERVAL_MS = 250;
+const SAVE_SYNC_DEBOUNCE_MS: number = 750;
+const LIVE_MIRROR_INTERVAL_MS: number = 250;
 
 class HarnessManager {
-  constructor(plugin, providers) {
+  plugin: FaustPlugin;
+  providers: HarnessProviderRegistry;
+  sessions: Map<string, HarnessSession>;
+  syncTimers: Map<string, ReturnType<typeof setTimeout>>;
+  liveMirrorTimers: Map<string, ReturnType<typeof setInterval>>;
+
+  constructor(plugin: FaustPlugin, providers: HarnessProviderRegistry) {
     this.plugin = plugin;
     this.providers = providers;
     this.sessions = new Map();
@@ -20,37 +30,37 @@ class HarnessManager {
     this.liveMirrorTimers = new Map();
   }
 
-  key(canvasPath, nodeId) {
+  key(canvasPath: string, nodeId: string): string {
     return `${canvasPath}:${nodeId}`;
   }
 
-  async create(source, sourcePath) {
-    const declaration = parseHarnessSource(source);
-    if (!declaration.valid) {
+  async create(source: string, sourcePath: string | null): Promise<unknown | null> {
+    const declaration: HarnessDeclaration = parseHarnessSource(source);
+    if (!declaration.valid || !declaration.harness) {
       this.plugin.notify(`Invalid harness: ${declaration.errors.join(" ")}`);
       return null;
     }
-    const provider = this.providers.get(declaration.harness.provider);
+    const provider: HarnessProvider | null = this.providers.get(declaration.harness.provider);
     if (!provider) {
       this.plugin.notify(`Unsupported harness provider "${declaration.harness.provider}".`);
       return null;
     }
-    const candidates = canvasCandidates(sourcePath, openCanvasPaths(this.plugin.app));
-    const located = await this.locate(candidates, declaration.harness.id);
+    const candidates: string[] = canvasCandidates(sourcePath, openCanvasPaths(this.plugin.app));
+    const located: { canvasPath: string; harnessNodeId: string; graph: CanvasGraph } | null = await this.locate(candidates, declaration.harness.id);
     if (!located) {
       this.plugin.notify(`Could not uniquely identify harness "${declaration.harness.id}" in ${candidates[0] || "an open Canvas"}.`);
       return null;
     }
-    const { canvasPath, harnessNodeId, graph } = located;
-    const key = this.key(canvasPath, harnessNodeId);
-    const existing = this.sessions.get(key);
+    const { canvasPath, harnessNodeId, graph }: { canvasPath: string; harnessNodeId: string; graph: CanvasGraph } = located;
+    const key: string = this.key(canvasPath, harnessNodeId);
+    const existing: HarnessSession | undefined = this.sessions.get(key);
     if (existing && !existing.disposed) return existing.terminal;
 
-    const bridge = await createBridgeSession();
+    const bridge: BridgeSession = await createBridgeSession();
     bridge.harnessId = declaration.harness.id;
     bridge.canvasPath = canvasPath;
     bridge.harnessNodeId = harnessNodeId;
-    let session;
+    let session: HarnessSession;
     try {
       session = await createHarnessSession({
         plugin: this.plugin,
@@ -64,7 +74,7 @@ class HarnessManager {
       });
     } catch (error) {
       await fsp.rm(bridge.directory, { recursive: true, force: true }).catch(() => {});
-      this.plugin.notify(`Could not start harness "${declaration.harness.id}": ${error.message}`);
+      this.plugin.notify(`Could not start harness "${declaration.harness.id}": ${(error as Error).message}`);
       return null;
     }
     session.onDispose = () => this.remove(session);
@@ -74,7 +84,7 @@ class HarnessManager {
     return session.terminal;
   }
 
-  scheduleSync(file) {
+  scheduleSync(file: unknown): void {
     if (!(file instanceof TFile) || file.extension !== "canvas") return;
     clearTimeout(this.syncTimers.get(file.path));
     this.syncTimers.set(file.path, setTimeout(() => {
@@ -87,7 +97,7 @@ class HarnessManager {
    * Obsidian's vault modify event only observes saved Canvas data. Poll the live Canvas document
    * while a harness is open so unsaved card and edge edits reach the MCP server as well.
    */
-  startLiveMirror(canvasPath) {
+  startLiveMirror(canvasPath: string): void {
     if (this.liveMirrorTimers.has(canvasPath)) return;
     this.liveMirrorTimers.set(canvasPath, setInterval(() => {
       void this.mirror(canvasPath);
@@ -95,32 +105,32 @@ class HarnessManager {
   }
 
   /** Writes the current Canvas graph into every live harness session on that Canvas. */
-  async mirror(canvasPath, { notify = false } = {}) {
-    let graph;
+  async mirror(canvasPath: string, { notify = false }: { notify?: boolean } = {}): Promise<void> {
+    let graph: CanvasGraph | undefined;
     try {
       graph = (await this.canvasGraphs(canvasPath))[0];
       if (!graph || findDuplicateHarnessIds(graph.nodes).length) return;
     } catch {
       return;
     }
-    for (const node of graph.nodes.filter((candidate) => candidate.type === "text")) {
-      const declaration = parseHarnessNode(node.text);
+    for (const node of graph.nodes.filter((candidate: CanvasNode) => candidate.type === "text")) {
+      const declaration: HarnessDeclaration = parseHarnessNode(node.text);
       if (!declaration.valid) continue;
-      const session = this.sessions.get(this.key(canvasPath, node.id));
+      const session: HarnessSession | undefined = this.sessions.get(this.key(canvasPath, node.id));
       if (!session) continue;
       try {
         await session.syncState(graph);
       } catch (error) {
-        if (notify) this.plugin.notify(`Could not refresh Canvas state for ${declaration.harness.id}: ${error.message}`);
+        if (notify) this.plugin.notify(`Could not refresh Canvas state for ${declaration.harness?.id}: ${(error as Error).message}`);
       }
     }
   }
 
   /** First candidate Canvas that holds exactly one node declaring the harness. */
-  async locate(canvasPaths, harnessId) {
+  async locate(canvasPaths: string[], harnessId: string): Promise<{ canvasPath: string; harnessNodeId: string; graph: CanvasGraph } | null> {
     for (const canvasPath of canvasPaths) {
       for (const graph of await this.canvasGraphs(canvasPath)) {
-        const matches = graph.nodes.filter((node) => node.type === "text" && parseHarnessNode(node.text).harness?.id === harnessId);
+        const matches: CanvasNode[] = graph.nodes.filter((node: CanvasNode) => node.type === "text" && parseHarnessNode(node.text).harness?.id === harnessId);
         if (matches.length === 1) return { canvasPath, harnessNodeId: matches[0].id, graph };
         if (matches.length > 1) return null;
       }
@@ -132,14 +142,14 @@ class HarnessManager {
    * A Canvas code block has no source path and a card Obsidian created moments ago may not be
    * in the saved file yet, so the live Canvas document is searched before the file on disk.
    */
-  async canvasGraphs(canvasPath) {
-    const contents = [liveCanvasContent(this.plugin.app, canvasPath)];
+  async canvasGraphs(canvasPath: string): Promise<CanvasGraph[]> {
+    const contents: (string | null)[] = [liveCanvasContent(this.plugin.app, canvasPath)];
     const file = this.plugin.app.vault.getAbstractFileByPath(canvasPath);
     if (file instanceof TFile) contents.push(await this.plugin.app.vault.cachedRead(file));
-    return contents.filter(Boolean).map((content) => parseCanvasGraph(content));
+    return contents.filter((c: string | null): c is string => c !== null && c !== "").map((content: string) => parseCanvasGraph(content));
   }
 
-  remove(session) {
+  remove(session: HarnessSession): void {
     if (this.sessions.get(session.key) !== session) return;
     this.sessions.delete(session.key);
     if (![...this.sessions.values()].some((candidate) => candidate.canvasPath === session.canvasPath)) {
@@ -148,7 +158,7 @@ class HarnessManager {
     }
   }
 
-  dispose() {
+  dispose(): void {
     for (const timer of this.syncTimers.values()) clearTimeout(timer);
     this.syncTimers.clear();
     for (const timer of this.liveMirrorTimers.values()) clearInterval(timer);
@@ -159,12 +169,12 @@ class HarnessManager {
 }
 
 /** Canvas files that may own a block: its own file first, then the open Canvas views. */
-function canvasCandidates(sourcePath, openPaths) {
-  const paths = [];
+function canvasCandidates(sourcePath: string | null, openPaths: string[]): string[] {
+  const paths: string[] = [];
   for (const candidate of [sourcePath, ...openPaths]) {
     if (typeof candidate === "string" && candidate.endsWith(".canvas") && !paths.includes(candidate)) paths.push(candidate);
   }
   return paths;
 }
 
-module.exports = { HarnessManager };
+export { HarnessManager };

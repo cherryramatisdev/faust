@@ -1,5 +1,3 @@
-"use strict";
-
 const RESEARCH_PARTNER_PROMPT = `# Research Partner
 
 ## Posture
@@ -72,4 +70,4 @@ Do not pad an answer to appear complete.
   Verify, or say you are guessing.
 `;
 
-module.exports = { RESEARCH_PARTNER_PROMPT };
+export { RESEARCH_PARTNER_PROMPT };

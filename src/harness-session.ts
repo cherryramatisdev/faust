@@ -1,15 +1,63 @@
-"use strict";
+import fsp from "node:fs/promises";
+import path from "node:path";
+import { TFile } from "obsidian";
+import { validateCanvasWriteOperation, writeCanvasWriteAcknowledgement } from "./harness-transport.js";
+import type { BridgeSession, CanvasWriteOperation, CanvasWriteAcknowledgement, WriteStatus } from "./harness-transport.js";
+import { contextFingerprint, parseCanvasGraph } from "./canvas-graph.js";
+import type { CanvasGraph } from "./canvas-graph.js";
+import { HarnessConsole } from "./harness-console.js";
+import { writeCanvasOrVaultTarget } from "./canvas-writer.js";
+import type { FaustPlugin } from "./constants.js";
+import type { HarnessProvider, LaunchSpec } from "./harness-provider.js";
 
-const fsp = require("fs/promises");
-const path = require("path");
-const { TFile } = require("obsidian");
-const { validateCanvasWriteOperation, writeCanvasWriteAcknowledgement } = require("./harness-transport");
-const { contextFingerprint, parseCanvasGraph } = require("./canvas-graph");
-const { HarnessConsole } = require("./harness-console");
-const { writeCanvasOrVaultTarget } = require("./canvas-writer");
+interface HarnessSessionOptions {
+  plugin: FaustPlugin;
+  provider: HarnessProvider;
+  bridge: BridgeSession;
+  terminal: HarnessConsole;
+  key: string;
+  harnessId: string;
+  canvasPath: string;
+  harnessNodeId: string;
+}
+
+interface CreateHarnessSessionOptions {
+  plugin: FaustPlugin;
+  provider: HarnessProvider;
+  bridge: BridgeSession;
+  graph?: CanvasGraph | null;
+  key: string;
+  harnessId: string;
+  canvasPath: string;
+  harnessNodeId: string;
+}
+
+interface WriteAcknowledgementResult {
+  status: WriteStatus;
+  error?: string;
+  targetNodeId?: string;
+  targetType?: string;
+  file?: string;
+  mode?: string;
+}
 
 class HarnessSession {
-  constructor({ plugin, provider, bridge, terminal, key, harnessId, canvasPath, harnessNodeId }) {
+  plugin: FaustPlugin;
+  provider: HarnessProvider;
+  bridge: BridgeSession;
+  terminal: HarnessConsole;
+  key: string;
+  harnessId: string;
+  canvasPath: string;
+  harnessNodeId: string;
+  contextVersion: string | null;
+  stateSync: Promise<void>;
+  writeProcessing: Promise<void>;
+  writeTimer: ReturnType<typeof setInterval> | null;
+  onDispose: ((session: HarnessSession) => void) | null;
+  disposed: boolean;
+
+  constructor({ plugin, provider, bridge, terminal, key, harnessId, canvasPath, harnessNodeId }: HarnessSessionOptions) {
     this.plugin = plugin;
     this.provider = provider;
     this.bridge = bridge;
@@ -26,7 +74,7 @@ class HarnessSession {
     this.disposed = false;
   }
 
-  start() {
+  start(): HarnessConsole {
     this.writeTimer = setInterval(() => {
       this.writeProcessing = this.writeProcessing.then(() => this.processWrites()).catch(() => {});
     }, 100);
@@ -38,10 +86,10 @@ class HarnessSession {
    * Mirrors the live Canvas graph for the shared MCP tools. No node content is resolved, staged,
    * or pushed here: `read_context` reads the graph and the vault itself when the model asks.
    */
-  syncState(graph) {
+  syncState(graph: CanvasGraph): Promise<void> {
     this.stateSync = this.stateSync.catch(() => {}).then(async () => {
       if (this.disposed) return;
-      const contextVersion = contextFingerprint(graph);
+      const contextVersion: string = contextFingerprint(graph);
       if (this.contextVersion === contextVersion) return;
       await writeJsonAtomically(this.bridge.canvasStatePath, {
         protocolVersion: this.bridge.protocolVersion,
@@ -57,9 +105,9 @@ class HarnessSession {
     return this.stateSync;
   }
 
-  async processWrites() {
+  async processWrites(): Promise<void> {
     if (this.disposed) return;
-    let names;
+    let names: string[];
     try {
       names = (await fsp.readdir(this.bridge.outboxDirectory)).filter((name) => name.endsWith(".json")).sort();
     } catch {
@@ -68,10 +116,10 @@ class HarnessSession {
     for (const name of names) await this.processWrite(path.join(this.bridge.outboxDirectory, name), name);
   }
 
-  async processWrite(operationPath, name) {
-    let operation;
+  async processWrite(operationPath: string, name: string): Promise<void> {
+    let operation: CanvasWriteOperation | undefined;
     try {
-      operation = JSON.parse(await fsp.readFile(operationPath, "utf8"));
+      operation = JSON.parse(await fsp.readFile(operationPath, "utf8")) as CanvasWriteOperation;
       validateCanvasWriteOperation(operation, { harnessId: this.harnessId, bridgeToken: this.bridge.bridgeToken });
       if (operation.canvasPath !== this.canvasPath) throw new Error("Canvas operation does not match the active harness session.");
       if (operation.harnessNodeId !== this.harnessNodeId) throw new Error("Canvas operation targets a different harness node.");
@@ -85,31 +133,31 @@ class HarnessSession {
         content: operation.content,
         mode: operation.mode,
       });
-      await this.writeAcknowledgement(operation, { status: "accepted", ...result });
+      await this.writeAcknowledgement(operation, { status: "accepted", targetNodeId: result.targetNodeId, targetType: result.targetType, mode: result.mode, file: result.file });
       await this.move(operationPath, path.join(this.bridge.writeProcessedDirectory, name));
     } catch (error) {
-      const operationId = operation?.operationId || path.basename(name, ".json");
+      const operationId: string = operation?.operationId || path.basename(name, ".json");
       if (!operationId.startsWith("write-")) return;
-      await this.writeAcknowledgement({ operationId }, { status: "rejected", error: error.message });
+      await this.writeAcknowledgement({ operationId }, { status: "rejected", error: (error as Error).message });
       await this.move(operationPath, path.join(this.bridge.writeErrorsDirectory, name));
     }
   }
 
-  async writeAcknowledgement(operation, result) {
+  async writeAcknowledgement(operation: { operationId: string }, result: WriteAcknowledgementResult): Promise<void> {
     await writeCanvasWriteAcknowledgement(this.bridge, {
       version: this.bridge.protocolVersion,
       operationId: operation.operationId,
       harnessId: this.harnessId,
       receivedAt: new Date().toISOString(),
       ...result,
-    });
+    } as CanvasWriteAcknowledgement);
   }
 
-  async move(from, to) {
-    try { await fsp.rename(from, to); } catch (error) { if (error.code !== "ENOENT") throw error; }
+  async move(from: string, to: string): Promise<void> {
+    try { await fsp.rename(from, to); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
   }
 
-  dispose() {
+  dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
     if (this.writeTimer) clearInterval(this.writeTimer);
@@ -119,24 +167,24 @@ class HarnessSession {
   }
 }
 
-async function createHarnessSession({ plugin, provider, bridge, graph, key, harnessId, canvasPath, harnessNodeId }) {
+async function createHarnessSession({ plugin, provider, bridge, graph, key, harnessId, canvasPath, harnessNodeId }: CreateHarnessSessionOptions): Promise<HarnessSession> {
   const file = plugin.app.vault.getAbstractFileByPath(canvasPath);
   if (!(file instanceof TFile)) throw new Error(`Canvas file "${canvasPath}" was not found in the vault.`);
   // The caller resolves the node from the live Canvas document, which runs ahead of the saved file.
-  const canvasGraph = graph || parseCanvasGraph(await plugin.app.vault.cachedRead(file));
-  const launch = provider.createLaunchSpec({ bridge, vaultPath: plugin.getVaultPath() });
-  const terminal = new HarnessConsole(plugin, launch);
-  const session = new HarnessSession({ plugin, provider, bridge, terminal, key, harnessId, canvasPath, harnessNodeId });
+  const canvasGraph: CanvasGraph = graph || parseCanvasGraph(await plugin.app.vault.cachedRead(file));
+  const launch: LaunchSpec = provider.createLaunchSpec({ bridge, vaultPath: plugin.getVaultPath() });
+  const terminal: HarnessConsole = new HarnessConsole(plugin, launch);
+  const session: HarnessSession = new HarnessSession({ plugin, provider, bridge, terminal, key, harnessId, canvasPath, harnessNodeId });
   await session.syncState(canvasGraph);
   terminal.onDispose = () => session.dispose();
   bridge.session = session;
   return session;
 }
 
-async function writeJsonAtomically(filePath, value) {
-  const temporaryPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+async function writeJsonAtomically(filePath: string, value: unknown): Promise<void> {
+  const temporaryPath: string = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   await fsp.writeFile(temporaryPath, `${JSON.stringify(value)}\n`, { encoding: "utf8", mode: 0o600 });
   await fsp.rename(temporaryPath, filePath);
 }
 
-module.exports = { HarnessSession, createHarnessSession };
+export { HarnessSession, createHarnessSession };

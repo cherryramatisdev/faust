@@ -1,11 +1,10 @@
-"use strict";
+import assert from "node:assert/strict";
+import test from "node:test";
+import { createHarnessMarkdown, findDuplicateHarnessIds, parseHarnessNode } from "../src/harness-declaration.js";
+import type { HarnessDeclaration } from "../src/harness-declaration.js";
 
-const assert = require("node:assert/strict");
-const test = require("node:test");
-const { createHarnessMarkdown, findDuplicateHarnessIds, parseHarnessNode } = require("../src/harness-declaration");
-
-test("creates a runtime-neutral harness declaration", () => {
-  const text = createHarnessMarkdown("claude-code", "agent-reviewer");
+test("creates a runtime-neutral harness declaration", (): void => {
+  const text: string = createHarnessMarkdown("claude-code", "agent-reviewer");
 
   assert.equal(text, "```agent-harness\nid: agent-reviewer\nprovider: claude-code\n```");
   assert.deepEqual(parseHarnessNode(text), {
@@ -15,15 +14,15 @@ test("creates a runtime-neutral harness declaration", () => {
   });
 });
 
-test("rejects provider options the runtime does not support", () => {
-  const result = parseHarnessNode("```agent-harness\nid: reviewer\nprovider: claude-code\nmodel: review-model\n```");
+test("rejects provider options the runtime does not support", (): void => {
+  const result: HarnessDeclaration = parseHarnessNode("```agent-harness\nid: reviewer\nprovider: claude-code\nmodel: review-model\n```");
 
   assert.equal(result.valid, false);
   assert.ok(result.errors.includes("Unsupported harness field: model"));
 });
 
-test("rejects malformed harness declarations", () => {
-  const cases = [
+test("rejects malformed harness declarations", (): void => {
+  const cases: [string, string][] = [
     ["not a code block", "The node must contain an agent-harness code block."],
     ["```agent-harness\nprovider: pi\n```", "Harness ID is required."],
     ["```agent-harness\nid: reviewer\n```", "Harness provider is required."],
@@ -36,8 +35,8 @@ test("rejects malformed harness declarations", () => {
   }
 });
 
-test("finds duplicate valid harness IDs without treating invalid nodes as harnesses", () => {
-  const nodes = [
+test("finds duplicate valid harness IDs without treating invalid nodes as harnesses", (): void => {
+  const nodes: { id: string; type: string; text: string }[] = [
     { id: "one", type: "text", text: createHarnessMarkdown("pi", "agent-main") },
     { id: "two", type: "text", text: createHarnessMarkdown("codex", "agent-main") },
     { id: "bad", type: "text", text: "```agent-harness\nid:\nprovider: pi\n```" },

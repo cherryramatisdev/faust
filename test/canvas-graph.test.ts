@@ -1,10 +1,9 @@
-"use strict";
+import assert from "node:assert/strict";
+import test from "node:test";
+import { CanvasGraphError, buildCanvasContextContent, buildConnections, contextFingerprint, getIncomingSourceNodes, getOutgoingTargets, parseCanvasGraph, resolveIncomingSourceNodes, resolveOutgoingTarget } from "../src/canvas-graph.js";
+import type { CanvasGraph, CanvasSourceNode } from "../src/canvas-graph.js";
 
-const assert = require("node:assert/strict");
-const test = require("node:test");
-const { CanvasGraphError, buildCanvasContextContent, buildConnections, contextFingerprint, getIncomingSourceNodes, getOutgoingTargets, parseCanvasGraph, resolveIncomingSourceNodes, resolveOutgoingTarget } = require("../src/canvas-graph");
-
-const graph = parseCanvasGraph(JSON.stringify({
+const graph: CanvasGraph = parseCanvasGraph(JSON.stringify({
   nodes: [
     { id: "requirements", type: "text", text: "# Requirements\n\nBuild a login flow." },
     { id: "architecture", type: "text", text: "The backend uses OAuth." },
@@ -17,7 +16,7 @@ const graph = parseCanvasGraph(JSON.stringify({
 }));
 
 test("resolves incoming sources in Canvas edge order and preserves provenance", () => {
-  const sources = getIncomingSourceNodes(graph, "pi-main");
+  const sources: CanvasSourceNode[] = getIncomingSourceNodes(graph, "pi-main");
   const message = buildCanvasContextContent(sources);
 
   assert.deepEqual(sources.map((source) => source.id), ["architecture", "requirements"]);
@@ -30,7 +29,7 @@ test("resolves incoming sources in Canvas edge order and preserves provenance", 
 });
 
 test("reads only the requested incoming node and ignores unsupported siblings", () => {
-  const mixed = parseCanvasGraph(JSON.stringify({
+  const mixed: CanvasGraph = parseCanvasGraph(JSON.stringify({
     nodes: [
       { id: "group", type: "group" },
       { id: "requirements", type: "text", text: "# Requirements\n\nShip it." },
@@ -48,7 +47,7 @@ test("reads only the requested incoming node and ignores unsupported siblings", 
 });
 
 test("tags both directions on nodes connected both ways", () => {
-  const bothWays = parseCanvasGraph(JSON.stringify({
+  const bothWays: CanvasGraph = parseCanvasGraph(JSON.stringify({
     nodes: [
       { id: "draft", type: "text", text: "Seed text" },
       { id: "notes", type: "text", text: "Incoming only" },
@@ -68,7 +67,7 @@ test("tags both directions on nodes connected both ways", () => {
 });
 
 test("fingerprints the graph independently of JSON collection order", () => {
-  const reordered = parseCanvasGraph(JSON.stringify({
+  const reordered: CanvasGraph = parseCanvasGraph(JSON.stringify({
     edges: [...graph.edges].reverse(),
     nodes: [...graph.nodes].reverse().map((node) => ({
       text: node.text,
@@ -85,14 +84,14 @@ test("fingerprints the graph independently of JSON collection order", () => {
 });
 
 test("reads incoming file nodes through the vault resolver", async () => {
-  const fileGraph = parseCanvasGraph(JSON.stringify({
+  const fileGraph: CanvasGraph = parseCanvasGraph(JSON.stringify({
     nodes: [
       { id: "spec", type: "file", file: "docs/spec.md" },
       { id: "pi-main", type: "text", text: "```agent-harness\nid: pi-main\nprovider: pi\n```" },
     ],
     edges: [{ id: "file-edge", fromNode: "spec", toNode: "pi-main" }],
   }));
-  const sources = await resolveIncomingSourceNodes(fileGraph, "pi-main", async (file) => {
+  const sources = await resolveIncomingSourceNodes(fileGraph, "pi-main", async (file: string) => {
     assert.equal(file, "docs/spec.md");
     return "# Specification\n\nUse the vault file.";
   });
@@ -115,6 +114,10 @@ test("rejects invalid edge references and unsupported source nodes", () => {
     nodes: [{ id: "pi-main", type: "text", text: "" }],
     edges: [{ id: "missing", fromNode: "gone", toNode: "pi-main" }],
   })), "pi-main"), CanvasGraphError);
+  assert.throws(() => getOutgoingTargets(parseCanvasGraph(JSON.stringify({
+    nodes: [{ id: "pi-main", type: "text", text: "" }],
+    edges: [{ id: "dangling", fromNode: "pi-main", toNode: "gone" }],
+  })), "pi-main"), CanvasGraphError);
 
   assert.throws(() => getIncomingSourceNodes(parseCanvasGraph(JSON.stringify({
     nodes: [{ id: "group", type: "group" }, { id: "pi-main", type: "text", text: "" }],
@@ -123,7 +126,7 @@ test("rejects invalid edge references and unsupported source nodes", () => {
 });
 
 test("resolves only direct outgoing text and file targets", () => {
-  const outgoing = parseCanvasGraph(JSON.stringify({
+  const outgoing: CanvasGraph = parseCanvasGraph(JSON.stringify({
     nodes: [
       { id: "pi-main", type: "text", text: "harness" },
       { id: "answer", type: "text", text: "draft" },
@@ -147,5 +150,5 @@ test("resolves only direct outgoing text and file targets", () => {
 
 test("rejects malformed Canvas JSON", () => {
   assert.throws(() => parseCanvasGraph("not json"), CanvasGraphError);
-  assert.deepEqual(parseCanvasGraph({ nodes: [], edges: [] }), { nodes: [], edges: [] });
+  assert.deepEqual(parseCanvasGraph({ nodes: [], edges: [] } as CanvasGraph), { nodes: [], edges: [] });
 });

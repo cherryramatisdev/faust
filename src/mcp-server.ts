@@ -1,27 +1,81 @@
-"use strict";
-
-const fs = require("fs/promises");
-const path = require("path");
-const { Server } = require("@modelcontextprotocol/sdk/server/index.js");
-const { StdioServerTransport } = require("@modelcontextprotocol/sdk/server/stdio.js");
-const { CallToolRequestSchema, ListToolsRequestSchema } = require("@modelcontextprotocol/sdk/types.js");
-const {
+import fs from "node:fs/promises";
+import path from "node:path";
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import {
   buildCanvasContextContent,
   buildConnections,
   parseCanvasGraph,
   resolveIncomingSourceNodes,
-} = require("./canvas-graph");
-const {
+} from "./canvas-graph.js";
+import {
   PROTOCOL_VERSION,
   createCanvasWriteOperation,
   waitForWriteAcknowledgement,
   writeCanvasWriteOperation,
-} = require("./harness-transport");
+} from "./harness-transport.js";
+import type {
+  CanvasGraph,
+  CanvasSourceNode,
+  CanvasConnection,
+  CanvasContextContent,
+  CanvasWriteMode,
+} from "./canvas-graph.js";
+import type {
+  CanvasWriteOperation,
+  CanvasWriteAcknowledgement,
+} from "./harness-transport.js";
 
-const SERVER_VERSION = "1.0.0";
-const LIVE_CANVAS_MIRROR_INTERVAL_MS = 250;
+interface ToolSchema {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  outputSchema: Record<string, unknown>;
+}
 
-const TOOLS = [
+interface McpState {
+  directory: string;
+  harnessId: string;
+  bridgeToken: string;
+  protocolVersion: number;
+  canvasPath: string;
+  harnessNodeId: string;
+  canvasStatePath: string;
+  outboxDirectory: string;
+  writeProcessedDirectory: string;
+  writeAcknowledgementsDirectory: string;
+  writeErrorsDirectory: string;
+  sessionPath: string;
+  sessionId: string;
+}
+
+interface CanvasSnapshot {
+  version: string | null;
+  capturedAt: string | null;
+  graph: CanvasGraph;
+}
+
+type ReadContextArgs = { nodeId?: string };
+
+type WriteCanvasNodeArgs = { targetNodeId?: string; content?: string; mode?: CanvasWriteMode };
+
+interface TextResult {
+  content: { type: "text"; text: string }[];
+}
+
+interface StructuredTextResult extends TextResult {
+  structuredContent: Record<string, unknown>;
+}
+
+interface ToolErrorResult extends TextResult {
+  isError: true;
+}
+
+const SERVER_VERSION: string = "1.0.0";
+const LIVE_CANVAS_MIRROR_INTERVAL_MS: number = 250;
+
+const TOOLS: ToolSchema[] = [
   {
     name: "read_context",
     description: "Read the full content of every Canvas node connected TO this harness, following incoming edges only. The full text is returned in fullText and the source metadata in sources. Call this before reasoning about any request in this session. File nodes are read from the vault; text nodes come from the live Canvas document.",
@@ -101,9 +155,9 @@ const TOOLS = [
   },
 ];
 
-async function main() {
-  const state = readEnvironment();
-  const server = new Server(
+async function main(): Promise<void> {
+  const state: McpState = readEnvironment();
+  const server: Server = new Server(
     { name: "faust-canvas", version: SERVER_VERSION },
     {
       capabilities: { tools: {} },
@@ -112,21 +166,23 @@ async function main() {
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const name = request.params.name;
-    const args = request.params.arguments || {};
+  // The MCP SDK's ServerResult type is stricter than our tool results; the handler return
+  // is typed as any to bridge SDK version drift without changing runtime behavior.
+  server.setRequestHandler(CallToolRequestSchema, async (request: { params: { name: string; arguments?: Record<string, unknown> } }): Promise<any> => {
+    const name: string = request.params.name;
+    const args: Record<string, unknown> = request.params.arguments || {};
     try {
-      if (name === "read_context") return await readContext(state, await readCanvasState(state), args);
+      if (name === "read_context") return await readContext(state, await readCanvasState(state), args as ReadContextArgs);
       if (name === "find_connected_nodes") {
         // The Obsidian host mirrors unsaved Canvas edits on a 250 ms interval. Wait for
         // that cycle before reading so a just-created edge is not hidden by the prior snapshot.
         await delay(LIVE_CANVAS_MIRROR_INTERVAL_MS + 50);
         return await findConnectedNodes(state, await readCanvasState(state));
       }
-      if (name === "write_canvas_node") return await writeCanvasNode(state, args);
+      if (name === "write_canvas_node") return await writeCanvasNode(state, args as WriteCanvasNodeArgs);
       return toolError(`Unknown Faust Canvas tool "${name}".`);
     } catch (error) {
-      return toolError(error.message || String(error));
+      return toolError((error as Error).message || String(error));
     }
   });
 
@@ -134,16 +190,16 @@ async function main() {
   await server.connect(transport);
 }
 
-function readEnvironment() {
-  const directory = process.env.FAUST_BRIDGE_DIR;
-  const harnessId = process.env.FAUST_HARNESS_ID;
-  const bridgeToken = process.env.FAUST_BRIDGE_TOKEN;
-  const protocolVersion = Number(process.env.FAUST_PROTOCOL_VERSION);
+function readEnvironment(): McpState {
+  const directory: string | undefined = process.env.FAUST_BRIDGE_DIR;
+  const harnessId: string | undefined = process.env.FAUST_HARNESS_ID;
+  const bridgeToken: string | undefined = process.env.FAUST_BRIDGE_TOKEN;
+  const protocolVersion: number = Number(process.env.FAUST_PROTOCOL_VERSION);
   if (!directory || !harnessId || !bridgeToken || protocolVersion !== PROTOCOL_VERSION) {
     throw new Error("Canvas MCP server requires a valid Faust harness session.");
   }
-  const canvasPath = process.env.FAUST_CANVAS_PATH || "";
-  const harnessNodeId = process.env.FAUST_HARNESS_NODE_ID || "";
+  const canvasPath: string = process.env.FAUST_CANVAS_PATH || "";
+  const harnessNodeId: string = process.env.FAUST_HARNESS_NODE_ID || "";
   if (!canvasPath || !harnessNodeId) throw new Error("Canvas path and harness node ID are required for this session.");
   return {
     directory,
@@ -162,12 +218,12 @@ function readEnvironment() {
   };
 }
 
-async function readCanvasState(state) {
-  let raw;
+async function readCanvasState(state: McpState): Promise<CanvasSnapshot | null> {
+  let raw: { contextVersion: string; capturedAt: string; graph: CanvasGraph };
   try {
-    raw = JSON.parse(await fs.readFile(state.canvasStatePath, "utf8"));
+    raw = JSON.parse(await fs.readFile(state.canvasStatePath, "utf8")) as { contextVersion: string; capturedAt: string; graph: CanvasGraph };
   } catch (error) {
-    if (error.code === "ENOENT") return null;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
   }
   return {
@@ -177,20 +233,20 @@ async function readCanvasState(state) {
   };
 }
 
-async function readContext(state, snapshot, { nodeId } = {}) {
+async function readContext(state: McpState, snapshot: CanvasSnapshot | null, { nodeId }: ReadContextArgs = {}): Promise<StructuredTextResult> {
   if (nodeId !== undefined && typeof nodeId !== "string") throw new Error("nodeId must be a string when provided.");
   if (!snapshot) return structuredTextResult(
     "This harness has no Canvas state yet. Ask the user to reopen the Canvas.",
     { contextVersion: null, capturedAt: null, sources: [] }
   );
-  const sources = await resolveIncomingSourceNodes(
+  const sources: CanvasSourceNode[] = await resolveIncomingSourceNodes(
     snapshot.graph,
     state.harnessNodeId,
     readVaultFile,
     nodeId ? { nodeId } : {}
   );
   if (sources.length === 0) {
-    const message = nodeId
+    const message: string = nodeId
       ? `Canvas node "${nodeId}" is not connected to this harness by an incoming edge.`
       : "No Canvas node is connected to this harness yet. Ask the user to connect the nodes that hold the context.";
     return structuredTextResult(message, {
@@ -199,7 +255,7 @@ async function readContext(state, snapshot, { nodeId } = {}) {
       sources: [],
     });
   }
-  const assembled = buildCanvasContextContent(sources);
+  const assembled: CanvasContextContent = buildCanvasContextContent(sources);
   return structuredTextResult(assembled.content, {
     contextVersion: snapshot.version,
     capturedAt: snapshot.capturedAt,
@@ -207,16 +263,16 @@ async function readContext(state, snapshot, { nodeId } = {}) {
   });
 }
 
-async function findConnectedNodes(state, snapshot) {
-  const nodes = snapshot ? buildConnections(snapshot.graph, state.harnessNodeId) : [];
+async function findConnectedNodes(state: McpState, snapshot: CanvasSnapshot | null): Promise<TextResult & { structuredContent: { nodes: CanvasConnection[] } }> {
+  const nodes: CanvasConnection[] = snapshot ? buildConnections(snapshot.graph, state.harnessNodeId) : [];
   return { ...textResult(JSON.stringify(nodes, null, 2)), structuredContent: { nodes } };
 }
 
-async function writeCanvasNode(state, { targetNodeId, content, mode = "replace" } = {}) {
+async function writeCanvasNode(state: McpState, { targetNodeId, content, mode = "replace" }: WriteCanvasNodeArgs = {}): Promise<TextResult & { structuredContent: CanvasWriteAcknowledgement }> {
   if (typeof targetNodeId !== "string" || !targetNodeId) throw new Error("targetNodeId is required.");
   if (typeof content !== "string") throw new Error("content must be a string.");
-  if (!new Set(["replace", "append"]).has(mode)) throw new Error('mode must be "replace" or "append".');
-  const operation = createCanvasWriteOperation({
+  if (!new Set<CanvasWriteMode>(["replace", "append"]).has(mode)) throw new Error('mode must be "replace" or "append".');
+  const operation: CanvasWriteOperation = createCanvasWriteOperation({
     harnessId: state.harnessId,
     bridgeToken: state.bridgeToken,
     canvasPath: state.canvasPath,
@@ -226,35 +282,35 @@ async function writeCanvasNode(state, { targetNodeId, content, mode = "replace" 
     mode,
   });
   await writeCanvasWriteOperation(state, operation);
-  const acknowledgement = await waitForWriteAcknowledgement(state, operation.operationId);
-  const target = acknowledgement.targetNodeId || operation.targetNodeId;
+  const acknowledgement: CanvasWriteAcknowledgement = await waitForWriteAcknowledgement(state, operation.operationId);
+  const target: string = acknowledgement.targetNodeId || operation.targetNodeId;
   if (acknowledgement.status !== "accepted") {
     return { ...toolError(`Canvas target ${target} was rejected: ${acknowledgement.error || "write failed"}`), structuredContent: acknowledgement };
   }
   return { ...textResult(`Canvas target ${target} updated with ${operation.mode}.`), structuredContent: acknowledgement };
 }
 
-async function readVaultFile(filePath) {
+async function readVaultFile(filePath: string): Promise<string> {
   return fs.readFile(path.resolve(process.cwd(), filePath), "utf8");
 }
 
-function textResult(text) {
+function textResult(text: string): TextResult {
   return { content: [{ type: "text", text }] };
 }
 
-function structuredTextResult(text, structuredContent) {
+function structuredTextResult(text: string, structuredContent: Record<string, unknown>): StructuredTextResult {
   return { ...textResult(text), structuredContent: { ...structuredContent, fullText: text } };
 }
 
-function toolError(text) {
+function toolError(text: string): ToolErrorResult {
   return { ...textResult(text), isError: true };
 }
 
-function delay(milliseconds) {
+function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function initializeBridge(state) {
+async function initializeBridge(state: McpState): Promise<void> {
   await Promise.all([
     fs.mkdir(state.outboxDirectory, { recursive: true, mode: 0o700 }),
     fs.mkdir(state.writeProcessedDirectory, { recursive: true, mode: 0o700 }),
@@ -272,8 +328,8 @@ async function initializeBridge(state) {
   });
 }
 
-async function writeJsonAtomically(filePath, value) {
-  const temporaryPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+async function writeJsonAtomically(filePath: string, value: unknown): Promise<void> {
+  const temporaryPath: string = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   await fs.writeFile(temporaryPath, `${JSON.stringify(value)}\n`, { encoding: "utf8", mode: 0o600 });
   await fs.rename(temporaryPath, filePath);
 }
@@ -288,4 +344,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { TOOLS, findConnectedNodes, readContext, readEnvironment, readCanvasState, writeCanvasNode };
+export { TOOLS, findConnectedNodes, readContext, readEnvironment, readCanvasState, writeCanvasNode };

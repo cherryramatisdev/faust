@@ -1,11 +1,9 @@
-"use strict";
-
-const assert = require("node:assert/strict");
-const fs = require("node:fs/promises");
-const os = require("node:os");
-const path = require("node:path");
-const test = require("node:test");
-const {
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import test, { type TestContext } from "node:test";
+import {
   BridgeProtocolError,
   createBridgeSession,
   createCanvasWriteOperation,
@@ -13,16 +11,17 @@ const {
   waitForWriteAcknowledgement,
   writeCanvasWriteAcknowledgement,
   writeCanvasWriteOperation,
-} = require("../src/harness-transport");
+} from "../src/harness-transport.js";
+import type { BridgeSession, CanvasWriteOperation } from "../src/harness-transport.js";
 
-async function temporaryRoot(t) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "faust-transport-test-"));
+async function temporaryRoot(t: TestContext): Promise<string> {
+  const root: string = await fs.mkdtemp(path.join(os.tmpdir(), "faust-transport-test-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   return root;
 }
 
-test("creates a private session directory outside the vault with a Canvas state path", async (t) => {
-  const session = await createBridgeSession({ temporaryRoot: await temporaryRoot(t) });
+test("creates a private session directory outside the vault with a Canvas state path", async (t: TestContext) => {
+  const session: BridgeSession = await createBridgeSession({ temporaryRoot: await temporaryRoot(t) });
 
   assert.match(session.directory, /faust-canvas/);
   assert.equal(path.dirname(session.canvasStatePath), session.directory);
@@ -31,10 +30,10 @@ test("creates a private session directory outside the vault with a Canvas state 
   assert.deepEqual(await fs.readdir(session.outboxDirectory), []);
 });
 
-test("writes and acknowledges an authenticated Canvas operation", async (t) => {
-  const session = await createBridgeSession({ temporaryRoot: await temporaryRoot(t) });
+test("writes and acknowledges an authenticated Canvas operation", async (t: TestContext) => {
+  const session: BridgeSession = await createBridgeSession({ temporaryRoot: await temporaryRoot(t) });
   session.harnessId = "pi-main";
-  const operation = createCanvasWriteOperation({
+  const operation: CanvasWriteOperation = createCanvasWriteOperation({
     harnessId: session.harnessId,
     bridgeToken: session.bridgeToken,
     canvasPath: "main.canvas",
@@ -42,7 +41,7 @@ test("writes and acknowledges an authenticated Canvas operation", async (t) => {
     targetNodeId: "answer",
     content: "draft",
   });
-  const operationPath = await writeCanvasWriteOperation(session, operation);
+  const operationPath: string = await writeCanvasWriteOperation(session, operation);
   assert.deepEqual(JSON.parse(await fs.readFile(operationPath, "utf8")), operation);
 
   await writeCanvasWriteAcknowledgement(session, {
@@ -58,10 +57,10 @@ test("writes and acknowledges an authenticated Canvas operation", async (t) => {
   assert.doesNotThrow(() => validateCanvasWriteAcknowledgement(acknowledgement, { operationId: operation.operationId }));
 });
 
-test("rejects an operation with a mismatched bridge token", async (t) => {
-  const session = await createBridgeSession({ temporaryRoot: await temporaryRoot(t) });
+test("rejects an operation with a mismatched bridge token", async (t: TestContext) => {
+  const session: BridgeSession = await createBridgeSession({ temporaryRoot: await temporaryRoot(t) });
   session.harnessId = "pi-main";
-  const operation = createCanvasWriteOperation({
+  const operation: CanvasWriteOperation = createCanvasWriteOperation({
     harnessId: session.harnessId,
     bridgeToken: "wrong-token",
     canvasPath: "main.canvas",
@@ -73,7 +72,7 @@ test("rejects an operation with a mismatched bridge token", async (t) => {
   await assert.rejects(writeCanvasWriteOperation(session, operation), BridgeProtocolError);
 });
 
-test("times out without writing a duplicate operation", async (t) => {
-  const session = await createBridgeSession({ temporaryRoot: await temporaryRoot(t) });
+test("times out without writing a duplicate operation", async (t: TestContext) => {
+  const session: BridgeSession = await createBridgeSession({ temporaryRoot: await temporaryRoot(t) });
   await assert.rejects(waitForWriteAcknowledgement(session, "write-missing", { timeoutMs: 10, pollIntervalMs: 2 }), /Timed out/);
 });
