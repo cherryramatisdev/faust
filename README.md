@@ -80,7 +80,11 @@ Open **Settings → Faust** to choose the default provider for new cards, set ex
 
 ## Development
 
-Edit files in `src/`, then run `deno task build` to generate `main.js` and `mcp-server.js`. Run `deno task dev` to rebuild on changes, `deno task test` for unit tests, and `deno task check` for type checking.
+- Edit files in `src/`, then run `deno task build` to generate `main.js` and `mcp-server.js`.
+- Run `deno task dev` to rebuild on changes,
+- `deno task test` for unit tests,
+- `deno task check` for type checking.
+- `deno task test:stdio` for the built MCP server’s stdio smoke test.
 
 ## Special thanks
 

@@ -4,12 +4,15 @@
   "imports": {
     "@modelcontextprotocol/sdk/server/index.js": "./node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.js",
     "@modelcontextprotocol/sdk/server/stdio.js": "./node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js",
-    "@modelcontextprotocol/sdk/types.js": "./node_modules/@modelcontextprotocol/sdk/dist/esm/types.js"
+    "@modelcontextprotocol/sdk/types.js": "./node_modules/@modelcontextprotocol/sdk/dist/esm/types.js",
+    "@modelcontextprotocol/sdk/client/index.js": "./node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js",
+    "@modelcontextprotocol/sdk/client/stdio.js": "./node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js"
   },
   "tasks": {
     "build": "deno run --allow-read --allow-write --allow-run --allow-env esbuild.config.mjs",
     "dev": "deno run --allow-read --allow-write --allow-run --allow-env esbuild.config.mjs --watch",
     "test": "deno test --allow-read --allow-write --allow-env --allow-sys --allow-run",
+    "test:stdio": "make build && deno test --allow-read --allow-write --allow-env --allow-sys --allow-run test/mcp-server-stdio-smoke.ts",
     "check": "deno check src/"
   }
 }
