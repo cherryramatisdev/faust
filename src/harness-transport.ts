@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
 export type WriteMode = "replace" | "append";
 export type WriteStatus = "accepted" | "rejected" | "failed";
@@ -170,6 +171,16 @@ async function waitForWriteAcknowledgement(session: BridgeSession, operationId: 
   throw new BridgeProtocolError(`Timed out waiting for Canvas acknowledgement of "${operationId}".`);
 }
 
+async function submitCanvasWrite(
+  session: BridgeSession,
+  input: CreateCanvasWriteOperationInput,
+  options?: WaitForAcknowledgementOptions,
+): Promise<CanvasWriteAcknowledgement> {
+  const operation: CanvasWriteOperation = createCanvasWriteOperation(input);
+  await writeCanvasWriteOperation(session, operation);
+  return waitForWriteAcknowledgement(session, operation.operationId, options);
+}
+
 function validateCanvasWriteAcknowledgement(acknowledgement: unknown, expected: ValidationExpected = {}): CanvasWriteAcknowledgement {
   if (!acknowledgement || typeof acknowledgement !== "object") throw new BridgeProtocolError("Canvas acknowledgement has an unsupported protocol version.");
   const ack = acknowledgement as CanvasWriteAcknowledgement & Record<string, unknown>;
@@ -211,15 +222,12 @@ async function readFileOrNull(filePath: string): Promise<string | null> {
   }
 }
 
-function sleep(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
 export {
   BridgeProtocolError,
   PROTOCOL_VERSION,
   createBridgeSession,
   createCanvasWriteOperation,
+  submitCanvasWrite,
   validateCanvasWriteOperation,
   validateCanvasWriteAcknowledgement,
   waitForWriteAcknowledgement,
