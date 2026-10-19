@@ -3,29 +3,11 @@ import path from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import {
-  buildCanvasContextContent,
-  buildConnections,
-  parseCanvasGraph,
-  resolveIncomingSourceNodes,
-} from "./canvas-graph.js";
-import {
-  PROTOCOL_VERSION,
-  createCanvasWriteOperation,
-  waitForWriteAcknowledgement,
-  writeCanvasWriteOperation,
-} from "./harness-transport.js";
-import type {
-  CanvasGraph,
-  CanvasSourceNode,
-  CanvasConnection,
-  CanvasContextContent,
-  CanvasWriteMode,
-} from "./canvas-graph.js";
-import type {
-  CanvasWriteOperation,
-  CanvasWriteAcknowledgement,
-} from "./harness-transport.js";
+import { parseCanvasGraph } from "./canvas-graph.js";
+import type { CanvasGraph } from "./canvas-graph.js";
+import { createCanvasMcpRequests, toolError } from "./canvas-mcp-requests.js";
+import type { CanvasSnapshot, ReadContextArgs, WriteCanvasNodeArgs } from "./canvas-mcp-requests.js";
+import { PROTOCOL_VERSION, submitCanvasWrite as submitCanvasWriteOperation } from "./harness-transport.js";
 
 interface ToolSchema {
   name: string;
@@ -50,30 +32,7 @@ interface McpState {
   sessionId: string;
 }
 
-interface CanvasSnapshot {
-  version: string | null;
-  capturedAt: string | null;
-  graph: CanvasGraph;
-}
-
-type ReadContextArgs = { nodeId?: string };
-
-type WriteCanvasNodeArgs = { targetNodeId?: string; content?: string; mode?: CanvasWriteMode };
-
-interface TextResult {
-  content: { type: "text"; text: string }[];
-}
-
-interface StructuredTextResult extends TextResult {
-  structuredContent: Record<string, unknown>;
-}
-
-interface ToolErrorResult extends TextResult {
-  isError: true;
-}
-
 const SERVER_VERSION: string = "1.0.0";
-const LIVE_CANVAS_MIRROR_INTERVAL_MS: number = 250;
 
 const TOOLS: ToolSchema[] = [
   {
@@ -157,11 +116,24 @@ const TOOLS: ToolSchema[] = [
 
 async function main(): Promise<void> {
   const state: McpState = readEnvironment();
+  const requests = createCanvasMcpRequests({
+    harnessNodeId: state.harnessNodeId,
+    readCanvasState: () => readCanvasState(state),
+    readVaultFile,
+    submitCanvasWrite: (request) =>
+      submitCanvasWriteOperation(state, {
+        harnessId: state.harnessId,
+        bridgeToken: state.bridgeToken,
+        canvasPath: state.canvasPath,
+        harnessNodeId: state.harnessNodeId,
+        ...request,
+      }),
+  });
   const server: Server = new Server(
     { name: "faust-canvas", version: SERVER_VERSION },
     {
       capabilities: { tools: {} },
-      instructions: "Canvas context is provided by connected incoming nodes. Writes are restricted to explicitly connected outgoing targets.",
+      instructions: "Canvas context is provided by connected incoming nodes. Writes are restricted to explicitly connected outgoing targets."
     }
   );
 
@@ -172,14 +144,9 @@ async function main(): Promise<void> {
     const name: string = request.params.name;
     const args: Record<string, unknown> = request.params.arguments || {};
     try {
-      if (name === "read_context") return await readContext(state, await readCanvasState(state), args as ReadContextArgs);
-      if (name === "find_connected_nodes") {
-        // The Obsidian host mirrors unsaved Canvas edits on a 250 ms interval. Wait for
-        // that cycle before reading so a just-created edge is not hidden by the prior snapshot.
-        await delay(LIVE_CANVAS_MIRROR_INTERVAL_MS + 50);
-        return await findConnectedNodes(state, await readCanvasState(state));
-      }
-      if (name === "write_canvas_node") return await writeCanvasNode(state, args as WriteCanvasNodeArgs);
+      if (name === "read_context") return await requests.readContext(args as ReadContextArgs);
+      if (name === "find_connected_nodes") return await requests.findConnectedNodes();
+      if (name === "write_canvas_node") return await requests.writeCanvasNode(args as WriteCanvasNodeArgs);
       return toolError(`Unknown Faust Canvas tool "${name}".`);
     } catch (error) {
       return toolError((error as Error).message || String(error));
@@ -233,81 +200,8 @@ async function readCanvasState(state: McpState): Promise<CanvasSnapshot | null> 
   };
 }
 
-async function readContext(state: McpState, snapshot: CanvasSnapshot | null, { nodeId }: ReadContextArgs = {}): Promise<StructuredTextResult> {
-  if (nodeId !== undefined && typeof nodeId !== "string") throw new Error("nodeId must be a string when provided.");
-  if (!snapshot) return structuredTextResult(
-    "This harness has no Canvas state yet. Ask the user to reopen the Canvas.",
-    { contextVersion: null, capturedAt: null, sources: [] }
-  );
-  const sources: CanvasSourceNode[] = await resolveIncomingSourceNodes(
-    snapshot.graph,
-    state.harnessNodeId,
-    readVaultFile,
-    nodeId ? { nodeId } : {}
-  );
-  if (sources.length === 0) {
-    const message: string = nodeId
-      ? `Canvas node "${nodeId}" is not connected to this harness by an incoming edge.`
-      : "No Canvas node is connected to this harness yet. Ask the user to connect the nodes that hold the context.";
-    return structuredTextResult(message, {
-      contextVersion: snapshot.version,
-      capturedAt: snapshot.capturedAt,
-      sources: [],
-    });
-  }
-  const assembled: CanvasContextContent = buildCanvasContextContent(sources);
-  return structuredTextResult(assembled.content, {
-    contextVersion: snapshot.version,
-    capturedAt: snapshot.capturedAt,
-    sources: assembled.sourceNodes,
-  });
-}
-
-async function findConnectedNodes(state: McpState, snapshot: CanvasSnapshot | null): Promise<TextResult & { structuredContent: { nodes: CanvasConnection[] } }> {
-  const nodes: CanvasConnection[] = snapshot ? buildConnections(snapshot.graph, state.harnessNodeId) : [];
-  return { ...textResult(JSON.stringify(nodes, null, 2)), structuredContent: { nodes } };
-}
-
-async function writeCanvasNode(state: McpState, { targetNodeId, content, mode = "replace" }: WriteCanvasNodeArgs = {}): Promise<TextResult & { structuredContent: CanvasWriteAcknowledgement }> {
-  if (typeof targetNodeId !== "string" || !targetNodeId) throw new Error("targetNodeId is required.");
-  if (typeof content !== "string") throw new Error("content must be a string.");
-  if (!new Set<CanvasWriteMode>(["replace", "append"]).has(mode)) throw new Error('mode must be "replace" or "append".');
-  const operation: CanvasWriteOperation = createCanvasWriteOperation({
-    harnessId: state.harnessId,
-    bridgeToken: state.bridgeToken,
-    canvasPath: state.canvasPath,
-    harnessNodeId: state.harnessNodeId,
-    targetNodeId,
-    content,
-    mode,
-  });
-  await writeCanvasWriteOperation(state, operation);
-  const acknowledgement: CanvasWriteAcknowledgement = await waitForWriteAcknowledgement(state, operation.operationId);
-  const target: string = acknowledgement.targetNodeId || operation.targetNodeId;
-  if (acknowledgement.status !== "accepted") {
-    return { ...toolError(`Canvas target ${target} was rejected: ${acknowledgement.error || "write failed"}`), structuredContent: acknowledgement };
-  }
-  return { ...textResult(`Canvas target ${target} updated with ${operation.mode}.`), structuredContent: acknowledgement };
-}
-
 async function readVaultFile(filePath: string): Promise<string> {
   return fs.readFile(path.resolve(process.cwd(), filePath), "utf8");
-}
-
-function textResult(text: string): TextResult {
-  return { content: [{ type: "text", text }] };
-}
-
-function structuredTextResult(text: string, structuredContent: Record<string, unknown>): StructuredTextResult {
-  return { ...textResult(text), structuredContent: { ...structuredContent, fullText: text } };
-}
-
-function toolError(text: string): ToolErrorResult {
-  return { ...textResult(text), isError: true };
-}
-
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 async function initializeBridge(state: McpState): Promise<void> {
@@ -344,4 +238,4 @@ if (require.main === module) {
     });
 }
 
-export { TOOLS, findConnectedNodes, readContext, readEnvironment, readCanvasState, writeCanvasNode };
+export { readCanvasState, readEnvironment, TOOLS };
